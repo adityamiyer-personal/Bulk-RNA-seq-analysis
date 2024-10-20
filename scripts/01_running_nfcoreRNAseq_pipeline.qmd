@@ -1,0 +1,58 @@
+---
+title: "01_Running-RNAseq_pipeline"
+format:
+  html:
+    code-fold: true
+    code-tools: true
+    toc: true
+    eval: false
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+## Using the nf-core pipeline
+
+nf-core RNA-seq allows us to perform the basic processing of RNA-seq reads in a reproducing fashion. I first set up a conda environment to run nf-core RNAseq pipeline.
+
+### Creation and setting up of conda environment
+
+```{r}
+#Creation of conda environment
+conda create -n bulkrnaseq
+
+#Activation of conda environment
+conda activate bulkrnaseq
+
+#install nextflow
+conda install bioconda::nextflow 
+```
+
+### Test nfcore rnaseq run
+
+After setting up the conda environment, I performed a test run to check if the config and local machine support the test run or not.
+
+```{r}
+#in the conda environment, run
+nextflow run nf-core/rnaseq \
+  -profile test,conda \
+  --outdir /Users/adityamiyer/Documents/BiostateAI/results/test_output/ \
+  -work-dir /Users/adityamiyer/Documents/BiostateAI/results/test_workdir/
+```
+
+### Samplesheet
+
+As given in the guidelines, the samplesheet follows the guidelines as given here https://nf-co.re/rnaseq/3.16.1/docs/usage/ . I set the strandedness value to `auto`, the pipeline will sub-sample the input FastQ files to 1 million reads, use Salmon Quant to automatically infer the strandedness, and then propagate this information through the rest of the pipeline. 
+
+```{r}
+
+```
+
+### Actual Run
+
+I used the **star_salmon workflow** of nf-core rnaseq pipeline (Version 3.16.1) that performs alignment using **STAR** and read quantification using **Salmon**
+
+```{r}
+
+```
+
