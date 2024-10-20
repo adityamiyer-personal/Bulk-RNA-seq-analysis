@@ -17,7 +17,7 @@ nf-core RNA-seq allows us to perform the basic processing of RNA-seq reads in a 
 
 ### Creation and setting up of conda environment
 
-```{r}
+```{r Creation of conda environment}
 #Creation of conda environment
 conda create -n bulkrnaseq
 
@@ -55,4 +55,3 @@ I used the **star_salmon workflow** of nf-core rnaseq pipeline (Version 3.16.1) 
 ```{r}
 
 ```
-
