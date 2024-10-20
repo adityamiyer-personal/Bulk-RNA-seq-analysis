@@ -11,7 +11,9 @@ editor_options:
   chunk_output_type: console
 ---
 
-## Using the nf-core pipeline
+I first created a github repo in my personal account and staged the necessary files to be tracked and pushed to Github repo. The github link for the project can be found here: https://github.com/adityamiyer-personal/Bulk-RNA-seq-analysis .
+
+## Using the nf-core pipeline to perform preprocessing of the RNA-seq FASTQs
 
 nf-core RNA-seq allows us to perform the basic processing of RNA-seq reads in a reproducing fashion. I first set up a conda environment to run nf-core RNAseq pipeline.
 
@@ -25,16 +27,29 @@ conda create -n bulkrnaseq
 conda activate bulkrnaseq
 
 #install nextflow
-conda install bioconda::nextflow 
+conda install -c bioconda nextflow
+conda install -c conda-forge openjdk=11.0.9.1
+conda install -c conda-forge singularity==3.8.6
+
+#Setting the channel priortiy list required for Nextflow
+conda config --add channels defaults
+conda config --add channels bioconda
+conda config --add channels conda-forge
+
+conda config --set channel_priority disabled
+
+conda install -n base conda-libmamba-solver
 ```
 
 ### Test nfcore rnaseq run
 
-After setting up the conda environment, I performed a test run to check if the config and local machine support the test run or not.
+After setting up the conda environment, I performed a test run to check if the config and local machine support the test run or not. I have used **3.14.0** version of the pipeline therefore went ahead with that.
 
-```{r}
+The script used to perform the test run in the conda environment is given below:
+
+```{r Test nfcore run}
 #in the conda environment, run
-nextflow run nf-core/rnaseq \
+nextflow run nf-core/rnaseq -r 3.14.0 \
   -profile test,conda \
   --outdir /Users/adityamiyer/Documents/BiostateAI/results/test_output/ \
   -work-dir /Users/adityamiyer/Documents/BiostateAI/results/test_workdir/
@@ -42,16 +57,45 @@ nextflow run nf-core/rnaseq \
 
 ### Samplesheet
 
-As given in the guidelines, the samplesheet follows the guidelines as given here https://nf-co.re/rnaseq/3.16.1/docs/usage/ . I set the strandedness value to `auto`, the pipeline will sub-sample the input FastQ files to 1 million reads, use Salmon Quant to automatically infer the strandedness, and then propagate this information through the rest of the pipeline. 
+As given in the guidelines, the samplesheet follows the guidelines as given here https://nf-co.re/rnaseq/3.14.0/docs/usage/ and https://nf-co.re/rnaseq/3.14.0/parameters . I set the strandedness value to **auto**, the pipeline will sub-sample the input FastQ files to 1 million reads, use Salmon Quant to automatically infer the strandedness, and then propagate this information through the rest of the pipeline. 
 
-```{r}
-
+```{r Creation of samplesheet}
+#| eval: true
+#| include: true
+#| warning: false
+library(tidyverse)
+readr::read_csv("~/Documents/BiostateAI/samplesheet/samplesheet.csv") %>% select(1:4) %>% knitr::kable()
 ```
 
-### Actual Run
+### nf-core run with the liver and heart samples
 
 I used the **star_salmon workflow** of nf-core rnaseq pipeline (Version 3.16.1) that performs alignment using **STAR** and read quantification using **Salmon**
 
-```{r}
 
+The general command that could be run on a HPC would look like below:
+```{r A general run on a server}
+nextflow run nf-core/rnaseq -r 3.14.0 \
+  -profile conda \
+  --outdir /Users/adityamiyer/Documents/BiostateAI/results/output/ \
+  -work-dir /Users/adityamiyer/Documents/BiostateAI/results/workdir/ \
+  --input /Users/adityamiyer/Documents/BiostateAI/samplesheet/samplesheet.csv \
+  --gtf ~/Documents/BiostateAI/data/fastqs/gencode.vM35.basic.annotation.gtf \
+  --fasta ~/Documents/BiostateAI/data/fastqs/GRCm39.primary_assembly.genome.fa.gz \
+  --aligner star_salmon --gencode -resume
 ```
+
+Due to memory limitations on my personal laptop, I resorted to the following command skipping all the various QC steps of the pipeline.
+```{r nfcore run with liver and heart samples}
+#in the conda environment, run
+nextflow run nf-core/rnaseq -r 3.14.0 \
+  -profile conda \
+  --outdir /Users/adityamiyer/Documents/BiostateAI/results/output/ \
+  -work-dir /Users/adityamiyer/Documents/BiostateAI/results/workdir/ \
+  --input /Users/adityamiyer/Documents/BiostateAI/samplesheet/samplesheet.csv \
+  --gtf ~/Documents/BiostateAI/data/fastqs/gencode.vM35.basic.annotation.gtf \
+  --fasta ~/Documents/BiostateAI/data/fastqs/GRCm39.primary_assembly.genome.fa.gz \
+  --aligner star_salmon --gencode -resume --max_memory '8.GB' --trimmer 'fastp' \
+  --skip_markduplicates --skip_rseqc --skip_preseq --skip_dupradar --skip_qualimap
+```
+
+The above run keeps failing due to memory issues in my system. I need access to a HPC to execute this pipeline.
