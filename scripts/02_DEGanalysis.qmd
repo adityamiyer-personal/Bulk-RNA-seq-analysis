@@ -14,7 +14,7 @@ editor: visual
 library(tidyverse) #for data wrangling
 library(DESeq2) #for DEG analysis
 library(genekitr) #for pathway analysis
-library(readr) #for data import
+library(readr) #for data importa
 ```
 
 ```{r Importing length-scaled counts}
