@@ -1,0 +1,1 @@
+This Github repository contains script and preliminary html reports from analysis of bulk RNA-seq samples obtained from mouse heart and liver across two sampling points. The sequence of scripts needed to be executed are in numerical order (01,02 and so on). 
