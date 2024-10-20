@@ -1,0 +1,27 @@
+---
+title: "02_DESeq2"
+format: html
+editor: visual
+---
+
+**Aim:** To perform differential gene expression analysis for different contrasts
+
+### Loading the required libraries and importing counts
+
+## Loading the required libraries
+
+```{r Loading libraries}
+library(tidyverse) #for data wrangling
+library(DESeq2) #for DEG analysis
+library(genekitr) #for pathway analysis
+library(readr) #for data import
+```
+
+```{r Importing length-scaled counts}
+
+```
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+

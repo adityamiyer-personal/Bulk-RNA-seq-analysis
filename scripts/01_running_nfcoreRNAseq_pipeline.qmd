@@ -11,11 +11,15 @@ editor_options:
   chunk_output_type: console
 ---
 
-I first created a github repo in my personal account and staged the necessary files to be tracked and pushed to Github repo. The github link for the project can be found here: https://github.com/adityamiyer-personal/Bulk-RNA-seq-analysis .
+**Aim:** To execute the bioinformatics pipeline that can be used to analyse RNA sequencing data obtained from organisms with a reference genome and annotation (mouse in case). It takes a samplesheet and FASTQ files as input, performs quality control (QC), trimming, alignment, and quantification to produce a gene expression matrix and extensive QC report.
+
+## Github repo
+
+I first created a github repo in my personal account and staged the necessary files to be tracked and pushed to Github repo. The github link for the project can be found here: <https://github.com/adityamiyer-personal/Bulk-RNA-seq-analysis>.
 
 ## Using the nf-core pipeline to perform preprocessing of the RNA-seq FASTQs
 
-nf-core RNA-seq allows us to perform the basic processing of RNA-seq reads in a reproducing fashion. I first set up a conda environment to run nf-core RNAseq pipeline.
+nf-core RNA-seq allows us to perform the basic processing of RNA-seq reads in a reproducing fashion. I first set up a conda environment to run nf-core RNAseq pipeline. More information about this open-source pipeline can be found at <https://nf-co.re/rnaseq/3.14.0/>.
 
 ### Creation and setting up of conda environment
 
@@ -57,7 +61,7 @@ nextflow run nf-core/rnaseq -r 3.14.0 \
 
 ### Samplesheet
 
-As given in the guidelines, the samplesheet follows the guidelines as given here https://nf-co.re/rnaseq/3.14.0/docs/usage/ and https://nf-co.re/rnaseq/3.14.0/parameters . I set the strandedness value to **auto**, the pipeline will sub-sample the input FastQ files to 1 million reads, use Salmon Quant to automatically infer the strandedness, and then propagate this information through the rest of the pipeline. 
+As given in the guidelines, the samplesheet follows the guidelines as given here <https://nf-co.re/rnaseq/3.14.0/docs/usage/> and <https://nf-co.re/rnaseq/3.14.0/parameters> . I set the strandedness value to **auto**, the pipeline will sub-sample the input FastQ files to 1 million reads, use Salmon Quant to automatically infer the strandedness, and then propagate this information through the rest of the pipeline. 
 
 ```{r Creation of samplesheet}
 #| eval: true
@@ -71,8 +75,8 @@ readr::read_csv("~/Documents/BiostateAI/samplesheet/samplesheet.csv") %>% select
 
 I used the **star_salmon workflow** of nf-core rnaseq pipeline (Version 3.16.1) that performs alignment using **STAR** and read quantification using **Salmon**
 
+The general command that could be run on a HPC or server would look like below:
 
-The general command that could be run on a HPC would look like below:
 ```{r A general run on a server}
 nextflow run nf-core/rnaseq -r 3.14.0 \
   -profile conda \
@@ -84,7 +88,10 @@ nextflow run nf-core/rnaseq -r 3.14.0 \
   --aligner star_salmon --gencode -resume
 ```
 
-Due to memory limitations on my personal laptop, I resorted to the following command skipping all the various QC steps of the pipeline.
+**Status:** The above run keeps failing due to memory issues in my system. I need access to a HPC to execute this pipeline.
+
+Due to memory limitations on my personal laptop, I resorted to the following command skipping all the various QC steps of the pipeline. Despite adding in memory and cpu limits, the star_salmon alignment strategy does not get executed in my PC.
+
 ```{r nfcore run with liver and heart samples}
 #in the conda environment, run
 nextflow run nf-core/rnaseq -r 3.14.0 \
@@ -94,8 +101,25 @@ nextflow run nf-core/rnaseq -r 3.14.0 \
   --input /Users/adityamiyer/Documents/BiostateAI/samplesheet/samplesheet.csv \
   --gtf ~/Documents/BiostateAI/data/fastqs/gencode.vM35.basic.annotation.gtf \
   --fasta ~/Documents/BiostateAI/data/fastqs/GRCm39.primary_assembly.genome.fa.gz \
-  --aligner star_salmon --gencode -resume --max_memory '8.GB' --trimmer 'fastp' \
+  --aligner star_salmon --gencode -resume --max_cpus 8 --max_memory 8.GB --trimmer 'fastp' \
   --skip_markduplicates --skip_rseqc --skip_preseq --skip_dupradar --skip_qualimap
 ```
 
-The above run keeps failing due to memory issues in my system. I need access to a HPC to execute this pipeline.
+**Status:** The above run keeps failing after initial QC due to memory issues. I need access to a HPC or server to execute this pipeline.
+
+To circumvent this issue, I am trying with using pseudoaligner Salmon instead of memory-intensive STAR and also added in memory,cpu limits. 
+
+```{r}
+nextflow run nf-core/rnaseq -r 3.14.0 \
+  -profile conda \
+  --outdir /Users/adityamiyer/Documents/BiostateAI/results/output/ \
+  -work-dir /Users/adityamiyer/Documents/BiostateAI/results/workdir/ \
+  --input /Users/adityamiyer/Documents/BiostateAI/samplesheet/samplesheet.csv \
+  --gtf ~/Documents/BiostateAI/data/fastqs/gencode.vM35.basic.annotation.gtf \
+  --fasta ~/Documents/BiostateAI/data/fastqs/GRCm39.primary_assembly.genome.fa.gz \
+  --gencode -resume --max_cpus 8 --max_memory 8.GB --trimmer 'fastp' \
+  --skip_markduplicates --skip_rseqc --skip_preseq --skip_dupradar --skip_qualimap --skip_alignment \
+  --pseudo_aligner salmon --skip_gtf_filter --skip_gtf_transcript_filter
+```
+
+**Status:** 
