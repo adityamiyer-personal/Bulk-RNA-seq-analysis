@@ -27,7 +27,9 @@ library(readr) #for data import
 library(eatTools) #for rbind functions
 library(strex) #for string related functions
 library(knitr) #for beautiful tables
+library(gt) #for customized table layouts
 library(ComplexHeatmap) #for beautiful heatmaps
+library(tidyheatmaps) #for heatmap generation from dataframe
 library(patchwork) #for adding multiple figures to a plot
 library(RColorBrewer) #for color schemas
 library(ggplot2) #for plotting
@@ -39,6 +41,9 @@ library(ExploreModelMatrix) #to explore complicated design in the DESeq2 formula
 ```{r Import metadata file}
 meta = read_csv("/Users/adityamiyer/Documents/BiostateAI/samplesheet/samplesheet.csv") %>%
   mutate(group = paste0(tissue,"_", time))
+meta$group <- factor(meta$group, levels = c("Heart_T0", "Liver_T0", "Heart_T12", "Liver_T12")) #setting the levels
+
+meta %>% gt()
 ```
 
 ### Importing the Kallisto output 
@@ -56,10 +61,6 @@ cts[is.na(cts)] = 0
 cts <- cts %>% mutate_if(is.numeric, list(round))
 ```
 
-```{r Sample correlation heatmap}
-
-```
-
 ## Creation and exploration of dds object
 
 ```{r Importing length-scaled counts and conversion to a DESeq object}
@@ -72,10 +73,10 @@ cts <- cts %>% mutate_if(is.numeric, list(round))
 #creation of dds object without prefiltering
 dds <- DESeqDataSetFromMatrix(countData = cts,
                               colData = meta,
-                              design = ~tissue + time)
+                              design = ~tissue) #paired design
 
 vd <- VisualizeDesign(sampleData = meta,
-                      designFormula = ~ tissue + time)
+                      designFormula = ~ tissue)
 vd$plotlist
 
 dds$tissue <- relevel(dds$tissue, ref = "Heart")
@@ -130,6 +131,8 @@ res %>% as.data.frame() %>%
 
 The p-value histogram after prefiltering of counts looks anti-conservative. Refer this link <http://varianceexplained.org/statistics/interpreting-pvalue-histogram/> for more info.
 
+### PCA plot
+
 ```{r PCA plot}
 vstcounts <- vst(dds, blind = T)
 normalized_cts <- assay(vstcounts) %>% as.matrix()
@@ -150,6 +153,7 @@ ggplot(PC1_and_PC2, aes(x = PC1, y = PC2, col=type)) +
 plotPCA(vstcounts, intgroup = c("tissue", "time"))
 ```
 
+### Sample correlation heatmap using vst counts
 
 ```{r Sample correlation heatmap using vst counts}
 sampleCor <- cor(normalized_cts)
@@ -162,14 +166,16 @@ pheatmap::pheatmap(sampleDistMatrix,
                    color = colors)
 ```
 
-## DEG analysis
+## Differential gene expression analysis using the paired-design
 
 ### Tissue-specific DEGs (the main effect)
 
-Here, I am identifying tissue-specific (liver versus heart) DEGs.
+Here, I am identifying tissue-specific (liver versus heart) DEGs. These DEGs would be liver- or heart-enriched from the paired design. 
+
+#### Identification of tissue-specific DEGs using DESeq2
 
 ```{r Identification of tissue-specific DEGs}
-res1 <- results(dds, contrast = c("tissue", "Liver", "Heart")) %>% as.data.frame()
+res1 <- results(dds, contrast = c("tissue", "Liver", "Heart")) %>% as.data.frame() #+ve logFC upregulated in liver, -ve logFC upregulated in heart
 
 #| layout-ncol: 2
 #| fig-cap: 
@@ -177,6 +183,7 @@ res1 <- results(dds, contrast = c("tissue", "Liver", "Heart")) %>% as.data.frame
 #|   - "Tissue-specific DEGs agnostic of the sampling timepoint"
 
 res1 <- res1 %>%
+  rownames_to_column("gene") %>%
   mutate(DEG = case_when(log2FoldChange > 1 & padj < 0.01 ~ "up",
                          log2FoldChange < -1 & padj < 0.01 ~ "down",
                          TRUE ~ "non-sig"),
@@ -186,7 +193,7 @@ res1 <- res1 %>%
                                 TRUE ~ "non-sig")) 
 
 res1 %>%
-  count(enrichment) %>% kable()
+  count(enrichment) %>% gt()
 
 #Volcano plot
 EnhancedVolcano::EnhancedVolcano(res1,
@@ -195,14 +202,28 @@ EnhancedVolcano::EnhancedVolcano(res1,
                                  lab = rownames(res1),
                                  pCutoff = 0.01,
                                  FCcutoff = 1,
-                                 title = "Liver vs Heart comparison agnostic of the sampling timepoints",
+                                 title = "Liver vs Heart comparison [Paired-design]",
                                  subtitle = "Differential expression analysis using DESeq2",
                                  labSize = 2.0
                                  )
 
-ix = which.min(res1$padj)
-assay(dds)[ix,] %>% ggplot(aes(x = ))
+#test this code
+as_tibble(counts(dds[res1$gene[1:2], ], normalize = TRUE),
+          rownames = 'gene') %>%
+  pivot_longer(names_to = "sample", values_to = "counts", -gene) %>%
+  left_join(as_tibble(colData(dds), rownames = "group")) %>%
+  #mutate(name = paste0(substr(Type, 1, 5), '_', Condition, '_', 1:3)) %>%
+  ggplot(aes(x = group, y = counts, fill = tissue)) +
+  geom_bar(stat = 'identity', color = "gray30") +
+  facet_wrap( ~ gene, scales = "free") +
+  theme(axis.text.x = element_text(size = 8, angle = 90),
+        axis.title.x = element_blank(),
+        legend.position = "right",
+        legend.text = element_text(size = 7),
+        legend.title = element_text(size = 7))
 ```
+
+#### Expression pattern of top tissue-specific DEGs
 
 ```{r Expression pattern of top tissue-specific DEGs}
 significant_genes <- res1 %>%
@@ -224,11 +245,12 @@ significant_genes <- res1 %>%
   filter(padj > 0.01, abs(log2FoldChange) > 2) %>%
   slice_max(abs(log2FoldChange), 12) %>%
   rownames()
+
 boxplot_1 <- lapply(significant_genes, function(x) {
   plotCounts(dds, gene = x,
              intgroup = c("group"),
              returnData = T) %>%
-    ggplot(aes(x = group, y = log2(count))) +
+    ggplot(aes(x = group, y = log2(count), fill = c("tissue", "time"))) +
     geom_boxplot() + geom_jitter(width = 0.1) + 
     xlab("Experimental group") + ylab("Normalized counts") +
     ggtitle(paste0(x))
@@ -236,14 +258,83 @@ boxplot_1 <- lapply(significant_genes, function(x) {
 wrap_plots(boxplot_1, ncol = 3)                             
 ```
 
-```{r Pathway enrichment analysis}
+#### Pathway analysis using multiple pathway databases using tissue-specific DEGs
 
+```{r Pathway enrichment analysis}
+# perform pathway analysis using multiple pathway genesets
+msigdb_gs <- geneset::getMsigdb(org = "mouse", category = "H")
+go_gs <- geneset::getGO(org = "mouse", ont = "bp")
+kegg_gs <- geneset::getKEGG(org = "mus", category = "pathway")
+
+gene_set = list(msigdb_gs, go_gs, kegg_gs)
+
+#empty lists for adding in the pathway results
+barplots_1 <- list()
+df1 = list()
+
+for (i in 1:length(gene_set)) {
+  go_results1 = safely(genORA)(res1 %>% filter(enrichment == "Liver") %>% pull(gene),
+                               geneset = gene_set[[i]],
+                               universe = rownames(res1))$result
+  
+  if (!is.null(go_results1)) {
+    go_results1$geneset = gene_set[[i]]$type
+    go_results1$enrichment = "Liver"
+  }
+  
+  go_results2 = safely(genORA)(res1 %>% filter(enrichment == "Heart") %>% pull(gene),
+                               geneset = gene_set[[i]],
+                               universe = rownames(res1))$result
+  
+  if (!is.null(go_results2)) {
+    go_results2$geneset = gene_set[[i]]$type
+    go_results2$enrichment = "Heart"
+  }
+  
+  df1 <- rbind_common(df1, go_results1, go_results2)
+  
+  barplots_1[[i]] <- plotEnrichAdv(head(go_results1, n = 10), head(go_results2, n = 10),
+              plot_type = "one",
+              term_metric = "FoldEnrich",
+              stats_metric = "qvalue",
+              xlim_left = 25, xlim_right = 15) +
+  theme(legend.position = c(0.15, 0.9)) #+
+  #scale_fill_discrete(name = "Pathways", labels = c(paste("Liver-enriched", gene_set[[i]]$type, "pathways"), 
+   #                                                 paste("Heart-enriched", gene_set[[i]]$type, "pathways"))
+}
+
+#| fig-cap: "Tissue-level (Main effects) comparison and pathways associated with DEGs across multiple databases"
+tidyheatmap(df = df1 %>% arrange(enrichment) %>% remove_rownames(),
+            rows = Description,
+            columns = enrichment,
+            values = p.adjust,
+            annotation_row = geneset,
+            gaps_row = geneset,
+            color_legend_min = 0,
+            color_legend_max = 1.3,
+            fontsize_row = 10,
+            fontsize_col = 12
+            )
 ```
 
 ### Time specific DEGs (the main effect)
 
-Here, I am identifying time-specific (T0 vs T12).
+Here, I am identifying time-specific (T0 vs T12). These DEGs would be T0- or T12-enriched from the paired design. 
 
 ```{r}
+#creation of dds object without prefiltering
+dds <- DESeqDataSetFromMatrix(countData = cts,
+                              colData = meta,
+                              design = ~ time) #paired design
 
+vd <- VisualizeDesign(sampleData = meta,
+                      designFormula = ~ time)
+vd$plotlist
+
+dds$tissue <- relevel(dds$tissue, ref = "T0")
+
+dds <- DESeq(dds)
 ```
+
+
+## Differential gene expression analysis using the interaction-design
