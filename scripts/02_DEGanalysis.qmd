@@ -73,7 +73,7 @@ cts <- cts %>% mutate_if(is.numeric, list(round))
 #creation of dds object without prefiltering
 dds <- DESeqDataSetFromMatrix(countData = cts,
                               colData = meta,
-                              design = ~tissue) #paired design
+                              design = ~tissue + time) #paired design tissue + time if need to adjust for confounders (time in this case)
 
 vd <- VisualizeDesign(sampleData = meta,
                       designFormula = ~ tissue)
@@ -81,7 +81,7 @@ vd$plotlist
 
 dds$tissue <- relevel(dds$tissue, ref = "Heart")
 
-dds <- DESeq(dds)
+dds <- DESeq(dds, test = "LRT", full = ~ tissue + time, reduced = ~ time) #Main effects for tissue #Expression affected by tissue
 
 resultsNames(dds)
 
@@ -166,16 +166,16 @@ pheatmap::pheatmap(sampleDistMatrix,
                    color = colors)
 ```
 
-## Differential gene expression analysis using the paired-design
+## Differential gene expression analysis
 
 ### Tissue-specific DEGs (the main effect)
 
-Here, I am identifying tissue-specific (liver versus heart) DEGs. These DEGs would be liver- or heart-enriched from the paired design. 
+Here, I am identifying tissue-specific (liver versus heart) DEGs. These DEGs would be liver- or heart-enriched. 
 
 #### Identification of tissue-specific DEGs using DESeq2
 
 ```{r Identification of tissue-specific DEGs}
-res1 <- results(dds, contrast = c("tissue", "Liver", "Heart")) %>% as.data.frame() #+ve logFC upregulated in liver, -ve logFC upregulated in heart
+res1 <- results(dds, name = ) %>% as.data.frame() #+ve logFC upregulated in liver, -ve logFC upregulated in heart
 
 #| layout-ncol: 2
 #| fig-cap: 
@@ -319,13 +319,13 @@ tidyheatmap(df = df1 %>% arrange(enrichment) %>% remove_rownames(),
 
 ### Time specific DEGs (the main effect)
 
-Here, I am identifying time-specific (T0 vs T12). These DEGs would be T0- or T12-enriched from the paired design. 
+Here, I am identifying time-specific (T0 vs T12). These DEGs would be T0- or T12-enriched. 
 
 ```{r}
 #creation of dds object without prefiltering
 dds <- DESeqDataSetFromMatrix(countData = cts,
                               colData = meta,
-                              design = ~ time) #paired design
+                              design = ~ tissue + time) #paired design
 
 vd <- VisualizeDesign(sampleData = meta,
                       designFormula = ~ time)
@@ -333,7 +333,9 @@ vd$plotlist
 
 dds$tissue <- relevel(dds$tissue, ref = "T0")
 
-dds <- DESeq(dds)
+dds <- DESeq(dds, test = "LRT", full = ~ tissue + time, reduced = ~ tissue) #Main effects for time #Expression affected by time
+
+res2 <- results(dds, name = )
 ```
 
 
