@@ -107,7 +107,7 @@ nextflow run nf-core/rnaseq -r 3.14.0 \
 
 **Status:** The above run keeps failing after initial QC due to memory issues. I need access to a HPC or server to execute this pipeline.
 
-To circumvent this issue, I am trying with using pseudoaligner Salmon instead of memory-intensive STAR and also added in memory,cpu limits. 
+To circumvent this issue, I am trying with using pseudoaligner **Kallisto** instead of memory-intensive STAR and also added in memory,cpu limits. I also set the strandedness of the libraries to "forward" so that Salmon index (memory-intensive again) is not run during the pipeline run. 
 
 ```{r}
 nextflow run nf-core/rnaseq -r 3.14.0 \
@@ -119,7 +119,7 @@ nextflow run nf-core/rnaseq -r 3.14.0 \
   --fasta ~/Documents/BiostateAI/data/fastqs/GRCm39.primary_assembly.genome.fa.gz \
   --gencode -resume --max_cpus 8 --max_memory 8.GB --trimmer 'fastp' \
   --skip_markduplicates --skip_rseqc --skip_preseq --skip_dupradar --skip_qualimap --skip_alignment \
-  --pseudo_aligner salmon --skip_gtf_filter --skip_gtf_transcript_filter
+  --pseudo_aligner kallisto --skip_gtf_filter --skip_gtf_transcript_filter
 ```
 
 **Status:** 

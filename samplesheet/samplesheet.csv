@@ -1,9 +1,9 @@
 sample,fastq_1,fastq_2,strandedness,time,tissue
-Liver_ZT0_REP1,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT0_1_R1.fastq.gz,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT0_1_R2.fastq.gz,auto,T0,Liver
-Liver_ZT0_REP2,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT0_2_R1.fastq.gz,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT0_2_R2.fastq.gz,auto,T0,Liver
-Liver_ZT12_REP1,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT12_1_R1.fastq.gz,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT12_1_R2.fastq.gz,auto,T12,Liver
-Liver_ZT12_REP2,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT12_2_R1.fastq.gz,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT12_2_R2.fastq.gz,auto,T12,Liver
-Heart_ZT0_REP1,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT0_1_R1.fastq.gz,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT0_1_R2.fastq.gz,auto,T0,Heart
-Heart_ZT0_REP2,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT0_2_R1.fastq.gz,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT0_2_R2.fastq.gz,auto,T0,Heart
-Heart_ZT12_REP1,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT12_1_R1.fastq.gz,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT12_1_R2.fastq.gz,auto,T12,Heart
-Heart_ZT12_REP2,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT12_2_R1.fastq.gz,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT12_2_R2.fastq.gz,auto,T12,Heart
+Liver_ZT0_REP1,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT0_1_R1.fastq.gz,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT0_1_R2.fastq.gz,forward,T0,Liver
+Liver_ZT0_REP2,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT0_2_R1.fastq.gz,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT0_2_R2.fastq.gz,forward,T0,Liver
+Liver_ZT12_REP1,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT12_1_R1.fastq.gz,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT12_1_R2.fastq.gz,forward,T12,Liver
+Liver_ZT12_REP2,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT12_2_R1.fastq.gz,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT12_2_R2.fastq.gz,forward,T12,Liver
+Heart_ZT0_REP1,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT0_1_R1.fastq.gz,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT0_1_R2.fastq.gz,forward,T0,Heart
+Heart_ZT0_REP2,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT0_2_R1.fastq.gz,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT0_2_R2.fastq.gz,forward,T0,Heart
+Heart_ZT12_REP1,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT12_1_R1.fastq.gz,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT12_1_R2.fastq.gz,forward,T12,Heart
+Heart_ZT12_REP2,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT12_2_R1.fastq.gz,/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT12_2_R2.fastq.gz,forward,T12,Heart
