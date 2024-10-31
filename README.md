@@ -5,6 +5,7 @@ Scripts for running nf-core rnaseq including setting up conda environment can be
 The HTML version of the above script can be found here https://github.com/adityamiyer-personal/Bulk-RNA-seq-analysis/blob/main/scripts/01_running_nfcoreRNAseq_pipeline.html . Kallisto outputs were provided despite the QC tools not working properly. 
 
 **Script for running liver and heart analysis - **
+
 **HTML report of the liver and heart analysis as given in the assignment - **
 
 
