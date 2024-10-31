@@ -2,7 +2,9 @@ This Github repository contains script and preliminary html reports from analysi
 
 Scripts for running nf-core rnaseq including setting up conda environment can be found here https://github.com/adityamiyer-personal/Bulk-RNA-seq-analysis/blob/main/scripts/01_running_nfcoreRNAseq_pipeline.qmd 
 
-The HTML version of the above script can be found here https://github.com/adityamiyer-personal/Bulk-RNA-seq-analysis/blob/main/scripts/01_running_nfcoreRNAseq_pipeline.html
+The HTML version of the above script can be found here https://github.com/adityamiyer-personal/Bulk-RNA-seq-analysis/blob/main/scripts/01_running_nfcoreRNAseq_pipeline.html . Kallisto outputs were provided despite the QC tools not working properly. 
+
+**HTML report of the liver and heart analysis as given in the assignment - **
 
 
 **Therefore, to mimic the similar design of the study, I processed the count matrix from Mansingh et al, 2024 to perform DGE (differential gene expression) and pathway-analysis along with other exploratory analysis using the count matrix. The count matrix is available for download here https://github.com/adityamiyer-personal/Bulk-RNA-seq-analysis/blob/main/scripts/Mansingh2024_expression_matrix.txt.**
