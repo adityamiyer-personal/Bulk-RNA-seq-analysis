@@ -1,0 +1,1228 @@
+---
+title: "DGEanalysis_assignment_BiostateAI"
+format:
+  html:
+    code-fold: true
+    code-tools: true
+    code-copy: true
+    toc: true
+    toc-depth: 4
+    eval: true
+    warning: false
+    message: false
+    fig-height: 7
+    fig-width: 7
+    fig-format: png
+    fig-dpi: 300
+  pdf: 
+    code-fold: true
+    code-tools: true
+    code-copy: true
+    toc: true
+    toc-depth: 4
+    eval: true
+    warning: false
+    message: false
+    fig-height: 7
+    fig-width: 7
+    fig-format: png
+    fig-dpi: 300
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+## Loading the required libraries
+
+```{r Loading the required libraries}
+library(tximport)
+library(tidyverse) #for data wrangling
+library(DESeq2) #for DEG analysis
+library(genekitr) #for pathway analysis
+library(readr) #for data import
+library(eatTools) #for rbind functions
+library(strex) #for string related functions
+library(knitr) #for beautiful tables
+library(gt) #for customized table layouts
+library(ComplexHeatmap) #for beautiful heatmaps
+library(tidyheatmaps) #for heatmap generation from dataframe
+library(patchwork) #for adding multiple figures to a plot
+library(RColorBrewer) #for color schemas
+library(ggplot2) #for plotting
+library(ExploreModelMatrix) #to explore complicated design in the DESeq2 formula
+library(UpSetR) #for upset plots
+library(DEGreport) #for clustering of genes into groups based on expression pattern
+```
+
+```{r Creation of tx2gene file from the GTF file}
+gtf <- rtracklayer::import("~/Documents/BiostateAI/data/fastqs/gencode.vM35.basic.annotation.gtf")
+
+gtf_df<- as.data.frame(gtf)
+
+#head(gtf_df)
+
+# this file is used to import the salmon output to summarize the counts from 
+# transcript level to gene level
+tx2gene<- gtf_df %>%
+        filter(type == "transcript") %>%
+        select(transcript_id, gene_id)
+
+# this file is used to map the ENSEMBL gene id to gene symbols in the DESeq2 results
+gene_name_map<- gtf_df %>% 
+        filter(type == "gene") %>% 
+        select(gene_id, gene_name) 
+```
+
+
+```{r Loading all the Kallisto output tsv files}
+files<- list.files(path = "~/Documents/BiostateAI/results/output/kallisto/", pattern = ".tsv", full.names = TRUE, 
+                   recursive = TRUE)
+
+names(files) <- stringr::str_split(files, pattern = "/", simplify = TRUE)[,10]
+txi.kallisto.tsv <- tximport(files, type = "kallisto", tx2gene = tx2gene, ignoreAfterBar = TRUE)
+
+head(txi.kallisto.tsv$counts)
+```
+
+
+### Function to add gene names [Didnt use it though] 
+
+```{r Add gene name to the DESeq2 output}
+add_gene_name<- function(res){
+  df<- as.data.frame(res) %>%
+    tibble::rownames_to_column(var = "gene_id") %>%
+    mutate(gene = transId(gene_id, transTo = "symbol", unique = T, keepNA = T)$symbol) %>%
+    drop_na(gene) %>%
+    arrange(padj, abs(log2FoldChange))
+  return(df)
+}
+```
+
+
+### Importing the counts matrix
+
+The counts file were imported from the publication <https://physoc.onlinelibrary.wiley.com/doi/10.1113/JP285585>. The authors investigated the outcome of perturbations of the primary and secondary feedback loops of the molecular clock in skeletal muscle by specific gene ablation of Period circadian regulator 2 (Per2) and RAR-related orphan receptor alpha (Rorα), respectively. 
+
+
+```{r Importing the counts and conversion to a DESeq object}
+#loading the length-scaled counts tsv file
+cts <- txi.kallisto.tsv$counts
+
+#converting NA into 0 and round off the counts
+cts[is.na(cts)] = 0
+cts <- cts %>% as.data.frame() %>% mutate_if(is.numeric, list(round)) %>% 
+  rownames_to_column("gene") %>% 
+  mutate(gene1 = transId(gene, transTo = "symbol", org = "mouse", unique = T, keepNA = T)$symbol) %>%
+  select(-gene) %>% 
+  select(gene1, everything())
+
+cts <- cts %>%
+  filter(!gene1 %in% cts$gene1[duplicated(cts$gene1)]) %>%
+  column_to_rownames("gene1")
+```
+
+### Loading the metadata file
+
+```{r Import metadata file}
+coldata <- data.frame(
+  stringsAsFactors = FALSE,
+                       sample = c("Liver_ZT0_REP1","Liver_ZT0_REP2","Liver_ZT12_REP1",
+                                  "Liver_ZT12_REP2","Heart_ZT0_REP1",
+                                  "Heart_ZT0_REP2","Heart_ZT12_REP1","Heart_ZT12_REP2"),
+                      fastq_1 = c("/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT0_1_R1.fastq.gz",
+                                  "/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT0_2_R1.fastq.gz",
+                                  "/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT12_1_R1.fastq.gz",
+                                  "/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT12_2_R1.fastq.gz",
+                                  "/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT0_1_R1.fastq.gz",
+                                  "/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT0_2_R1.fastq.gz",
+                                  "/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT12_1_R1.fastq.gz",
+                                  "/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT12_2_R1.fastq.gz"),
+                      fastq_2 = c("/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT0_1_R2.fastq.gz",
+                                  "/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT0_2_R2.fastq.gz",
+                                  "/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT12_1_R2.fastq.gz",
+                                  "/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Liver_ZT12_2_R2.fastq.gz",
+                                  "/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT0_1_R2.fastq.gz",
+                                  "/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT0_2_R2.fastq.gz",
+                                  "/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT12_1_R2.fastq.gz",
+                                  "/Users/adityamiyer/Documents/BiostateAI/data/fastqs/Heart_ZT12_2_R2.fastq.gz"),
+                 strandedness = c("forward",
+                                  "forward","forward","forward","forward",
+                                  "forward","forward","forward"),
+                         time = c("T0",
+                                  "T0","T12","T12","T0","T0","T12","T12"),
+                       tissue = c("Liver",
+                                  "Liver","Liver","Liver","Heart","Heart",
+                                  "Heart","Heart")
+           )
+
+#coldata <- coldata %>% filter(time %in% c("T0", "T12"))
+coldata$time <- factor(coldata$time, levels = c("T0", "T12"))
+coldata$tissue <- factor(coldata$tissue, levels = c("Heart", "Liver"))
+  
+#| layout-ncol: 2
+#| fig-cap: 
+#|   - "Metadata file"
+#|   - "Sample counts for tissue and timepoint combinations"
+coldata %>% gt()
+
+coldata %>% dplyr::count(tissue,time) %>% gt()
+```
+
+
+## Creation and exploration of dds object
+
+```{r Conversion to a DESeq object}
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "p-value histogram without prefiltering of counts"
+#|   - "Genes with high p-values do seem to have lower gene expression"
+
+#creation of dds object without prefiltering
+dds <- DESeqDataSetFromMatrix(countData = cts,
+                              colData = coldata,
+                              design = ~ tissue) #paired design tissue + time if need to adjust for confounders (time in this case)
+
+vd <- VisualizeDesign(sampleData = coldata,
+                      designFormula = ~ tissue)
+#print(vd$plotlist) #can visualize the model matrix and the various coefficients
+
+dds$tissue <- relevel(dds$tissue, ref = "Heart")
+
+dds <- DESeq(dds) #Main effects for tissue #Expression affected by tissue not correcting for  the timepoint effects
+
+res <- results(dds, contrast = c("tissue", "Heart", "Liver"))
+
+res %>% as.data.frame() %>%
+  arrange(padj) %>%
+  ggplot(aes(x = pvalue)) +
+  geom_histogram(color = "white", bins = 50) +
+  ggtitle("p-value histogram without prefiltering of counts")
+
+res %>% as.data.frame() %>%
+  rownames_to_column("gene_id") %>%
+  filter(!is.na(pvalue)) %>%
+  mutate(pvalue_bin = if_else(pvalue > 0.75, "high", "low")) %>%
+  ggplot(aes(x = pvalue_bin, y = log2(baseMean))) + 
+  geom_boxplot()
+```
+
+p-value histogram distribution looks bimodal. High expressing count genes fall into low p-value bin which is great. Let's look at the pattern after prefiltering of the counts.
+
+```{r Prefiltering of counts using the dds object}
+dds <- dds[rowSums(counts(dds) > 10,)] #opted out after the visualization
+dds <- DESeq(dds)
+#resultsNames(dds)
+
+res <- results(dds, contrast = c("tissue", "Heart", "Liver")) #FALSE is Heart, Liver is TRUE and is in the denominator
+
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "p-value histogram after prefiltering of counts"
+#|   - "Genes with high p-values do seem to have lower gene expression"
+
+res %>% as.data.frame() %>%
+  arrange(padj) %>%
+  ggplot(aes(x = pvalue)) +
+  geom_histogram(color = "white", bins = 50) +
+  ggtitle("p-value histogram after prefiltering of counts")
+
+res %>% as.data.frame() %>%
+  rownames_to_column("gene_id") %>%
+  filter(!is.na(pvalue)) %>%
+  mutate(pvalue_bin = if_else(pvalue > 0.75, "high", "low")) %>%
+  ggplot(aes(x = pvalue_bin, y = log2(baseMean))) + 
+  geom_boxplot()
+```
+
+Various contrasts can be identified using **resultNames(dds)** function
+
+The p-value histogram after prefiltering of counts is not looking good. Therefore, I haven't done prefiltering. Supposedly, DESeq2 takes care of the low counts while identifying DEGs. Refer this link <http://varianceexplained.org/statistics/interpreting-pvalue-histogram/> for more info on p-value histograms and their interpretations.
+
+```{r creating a dds object without prefiltering again}
+#creation of dds object without prefiltering
+dds <- DESeqDataSetFromMatrix(countData = cts,
+                              colData = coldata,
+                              design = ~ tissue) #paired design tissue + time if need to adjust for confounders (time in this case)
+
+dds <- DESeq(dds)
+```
+
+### PCA plot
+
+```{r PCA plot}
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "PCA when colored by tissue and timepoint"
+vstcounts <- vst(dds, blind = T)
+normalized_cts <- assay(vstcounts) %>% as.matrix()
+pca_prcomp <- prcomp(t(normalized_cts), center = T, scale = F)
+#names(pca_prcomp)
+
+PC1_and_PC2 <- data.frame(PC1 = pca_prcomp$x[,1],
+                          PC2 = pca_prcomp$x[,2],
+                          type = rownames(pca_prcomp$x))
+
+#using the complete normalized matrix
+#ggplot(PC1_and_PC2, aes(x = PC1, y = PC2, col=type)) +
+ # geom_point() +
+  #geom_text(aes(label = type), hjust = 0, vjust = 0) +
+  #coord_fixed()
+
+#using variable features
+plotPCA(vstcounts, intgroup = c("tissue","time"))
+```
+
+Tissue differences contribute to bulk of variance in PC1. 
+
+### Sample correlation heatmap using vst counts
+
+```{r Sample correlation heatmap using vst counts}
+sampleCor <- cor(normalized_cts)
+sampleDist <- as.dist(1 - cor(normalized_cts))
+sampleDistMatrix <- as.matrix(sampleDist)
+blueColours <- brewer.pal(9, "Blues")
+colors <- colorRampPalette(rev(blueColours))(255)
+annotation_row = data.frame(
+                    Group = str_before_first(colnames(sampleDistMatrix), "_")
+                )
+rownames(annotation_row) <- rownames(sampleDistMatrix)
+pheatmap(sampleDistMatrix,
+                   clustering_distance_cols = sampleDist, 
+                   color = colors,
+                   fontsize_row = 6,
+                   fontsize_col = 8,
+                   annotation_row = annotation_row,
+                   cutree_rows = 4
+                   )
+```
+
+All the timepoint and tissue replicates cluster in 4 groups corresponding to Liver, Heart and T0,12 combinations.
+
+## Differential gene expression analysis
+
+### Main effects due to tissue
+
+Here, I am identifying tissue-specific (Heart versus Liver) DEGs. These DEGs would be Heart- or Liver-enriched.
+
+#### Comparison of Wald versus LRT test DEGs [Main effects due to tissue]
+
+**DEGs can be defined genes passing the threshold: abs(logFC) \> 1 & padj \< 0.01**
+
+```{r Comparison of Wald test and LRT - tissue}
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "DEGs obtained with Wald test [Main effects due to tissue]"
+#|   - "DEGs obtained with paired design and with using LRT [Main effects due to tissue]"
+#|   - "Upset plot showing the common DEGs between comparisons and enrichment directionality [Main effects due to tissue]"
+dds <- DESeqDataSetFromMatrix(countData = cts,
+                              colData = coldata,
+                              design = ~ tissue) #not accounting for timepoint
+dds <- DESeq(dds)
+res1 <- results(dds, contrast = c("tissue", "Heart", "Liver"))
+res1 <- res1 %>%
+  as.data.frame() %>%
+  rownames_to_column("gene") %>%
+  drop_na(log2FoldChange,padj) %>%
+  mutate(DEG = case_when(log2FoldChange > 1 & padj < 0.01 ~ "up",
+                         log2FoldChange < -1 & padj < 0.01 ~ "down",
+                         TRUE ~ "non-sig"),
+         comparison = "Heart_vs_Liver-Wald",
+         enrichment = case_when(DEG == "up" ~ "Heart",
+                                DEG == "down" ~ "Liver",
+                                TRUE ~ "non-sig"))
+#res1 <- add_gene_name(res1)
+res1 %>% dplyr::count(comparison, enrichment) %>% gt()
+
+#LRT test
+dds <- DESeqDataSetFromMatrix(countData = cts,
+                              colData = coldata,
+                              design = ~ tissue + time) #accounting for timepoint in design
+dds <- DESeq(dds, test = "LRT", full = ~ tissue + time, reduced = ~ time)
+res2 <- results(dds, contrast = c("tissue", "Heart", "Liver"))
+res2 <- res2 %>%
+  as.data.frame() %>%
+  rownames_to_column("gene") %>%
+  drop_na(log2FoldChange,padj) %>%
+  mutate(DEG = case_when(log2FoldChange > 1 & padj < 0.01 ~ "up",
+                         log2FoldChange < -1 & padj < 0.01 ~ "down",
+                         TRUE ~ "non-sig"),
+         comparison = "Heart_vs_Liver-LRT",
+         enrichment = case_when(DEG == "up" ~ "Heart",
+                                DEG == "down" ~ "Liver",
+                                TRUE ~ "non-sig")) 
+#res2 <- add_gene_name(res2)
+res2 %>% dplyr::count(comparison, enrichment) %>% gt()
+res3 = rbind_common(res1,res2)
+#split(res3, f = list(res3$comparison, res3$enrichment))
+#UpSetR::upset()
+plotVenn(map(split(res3, f = list(res3$comparison, res3$enrichment)), function(x) x %>% pull(gene)),
+         use_venn = F,
+         main_text_size = 15,
+         legend_text_size = 8,
+         legend_position = "left")
+```
+
+DEGs with and without accounting for timepoint yields similar DEGs between Wald and LRT tests suggesting that both designs are okay to detect main effects due to tissue.
+
+#### Visualization of tissue-specific DEGs using DESeq2
+
+I am going with res1 object that uses Wald test to identify main effects due to tissue.
+
+```{r Identification of tissue-specific DEGs}
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "Number of identified DEGs (|logFC| > 1 & padj < 0.01)"
+#|   - "Tissue-specific DEGs agnostic of the sampling timepoint"
+
+#Volcano plot
+EnhancedVolcano::EnhancedVolcano(res1,
+                                 x = "log2FoldChange",
+                                 y = "padj",
+                                 lab = res1$gene,
+                                 pCutoff = 0.01,
+                                 FCcutoff = 1,
+                                 title = "Heart vs Liver comparison [Single-factor design]",
+                                 subtitle = "Differential expression analysis using DESeq2",
+                                 labSize = 2.0
+                                 )
+
+#test this code
+as_tibble(counts(dds[res1$gene[1:2], ], normalize = TRUE),
+          rownames = 'gene') %>%
+  pivot_longer(names_to = "sample", values_to = "counts", -gene) %>%
+  left_join(as_tibble(colData(dds), rownames = "group")) %>%
+  #mutate(name = paste0(substr(Type, 1, 5), '_', Condition, '_', 1:3)) %>%
+  ggplot(aes(x = group, y = counts, fill = tissue)) +
+  geom_bar(stat = 'identity', color = "gray30") +
+  facet_wrap( ~ gene, scales = "free") +
+  theme(axis.text.x = element_text(size = 8, angle = 90),
+        axis.title.x = element_blank(),
+        legend.position = "right",
+        legend.text = element_text(size = 7),
+        legend.title = element_text(size = 7))
+```
+
+The tissue based DEGs do not have specific pattern because enrichment can be at any tissue and timepoint combination
+
+#### Expression pattern of top tissue-specific DEGs
+
+```{r Expression pattern of top tissue-specific DEGs}
+significant_genes <- res1 %>%
+  as.data.frame() %>%
+  filter(padj < 0.01, abs(log2FoldChange) > 1) %>%
+  slice_max(abs(log2FoldChange), n = 50) %>%
+  pull(gene)
+sig_mat <- normalized_cts[significant_genes,]
+col_anno = HeatmapAnnotation(df = coldata %>% select(tissue, time),
+                             col = list(tissue = c("Liver" = "red", "Heart" = "blue")))
+
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "Heatmap of top 50 DEGs sorted by |logFC| (|logFC| > 1 & padj < 0.01)"
+#|   - "Boxplot of top 12 DEGs"
+Heatmap(t(scale(t(sig_mat))),
+        top_annotation = col_anno,
+        show_row_names = T,
+        cluster_rows = T,
+        cluster_columns = F,
+        row_names_gp = gpar(fontsize = 6),
+        column_names_gp = gpar(fontsize = 7),
+        name = "Scaled normalized\nexpression"
+        )
+
+significant_genes <- res1 %>%
+  as.data.frame() %>%
+  filter(padj < 0.01, abs(log2FoldChange) > 1) %>%
+  slice_max(abs(log2FoldChange), n = 12) %>%
+  pull(gene)
+
+boxplot_1 <- lapply(significant_genes, function(x) {
+  plotCounts(dds, gene = x,
+             intgroup = c("tissue","time"),
+             returnData = T) %>%
+    ggplot(aes(x = paste(tissue,time), y = log2(count), fill = tissue)) +
+    geom_boxplot() + geom_jitter(width = 0.1) + 
+    xlab("Experimental group") + ylab("Normalized counts") + 
+    theme(axis.text.x = element_text(angle = 90), axis.title.x = element_text(size = 6)) +
+    ggtitle(paste0(x))
+    })
+wrap_plots(boxplot_1, ncol = 3)                             
+```
+
+
+
+#### Pathway analysis using the tissue-specific DEGs (Main effects) using ORA
+
+```{r}
+# perform pathway analysis using multiple pathway genesets
+msigdb_gs <- geneset::getMsigdb(org = "mouse", category = "H")
+go_gs <- geneset::getGO(org = "mouse", ont = "bp")
+kegg_gs <- geneset::getKEGG(org = "mus", category = "pathway")
+react_gs <- geneset::getReactome(org = "mouse")
+
+gene_set = list(msigdb_gs, go_gs, kegg_gs, react_gs)
+
+#empty lists for adding in the pathway results
+barplots_1 <- list()
+df1 = NULL
+
+for (i in 1:length(gene_set)) {
+  go_results1 = safely(genORA)(res1 %>% filter(enrichment == "Heart") %>% pull(gene),
+                               geneset = gene_set[[i]],
+                               p_cutoff = 1, #to retrieve the whole output
+                               q_cutoff = 1, #to retrieve the whole output
+                               universe = rownames(res1))$result
+  
+  if (!is.null(go_results1)) {
+    go_results1$geneset = gene_set[[i]]$type
+    go_results1$enrichment = "Heart"
+  }
+  
+  go_results2 = safely(genORA)(res1 %>% filter(enrichment == "Liver") %>% pull(gene),
+                               geneset = gene_set[[i]],
+                               p_cutoff = 1, #to retrieve the whole output
+                               q_cutoff = 1, #to retrieve the whole output
+                               universe = rownames(res1))$result
+  
+  if (!is.null(go_results2)) {
+    go_results2$geneset = gene_set[[i]]$type
+    go_results2$enrichment = "Liver"
+  }
+  
+  df1 <- rbind_common(df1, go_results1, go_results2)
+  
+  if (!is.null(go_results1) & !is.null(go_results2)) {
+  p1 <- plotEnrich(go_results1,
+                   plot_type = "bar",
+                   n_term = 10,
+                   term_metric = "FoldEnrich",
+                   stats_metric = "qvalue")
+  p2 <- plotEnrich(go_results2,
+                   plot_type = "bar",
+                   n_term = 10,
+                   term_metric = "FoldEnrich",
+                   stats_metric = "qvalue")
+  barplots_1[[i]] <- p1 + p2
+  
+  }
+}
+
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "Pathway profile across multiple databases and tissue conditions"
+if(!is.null(df1)) {df1 %>% head() %>% gt_preview(top_n = 10)}
+if (!is.null(df1)) {
+  print(tidyheatmap(df = df1 %>% filter(p.adjust < 0.05) %>% mutate(p.adjust = -log10(p.adjust)) %>% arrange(geneset) %>% remove_rownames(), color_legend_n = 1, color_legend_min = 0, color_legend_max = 1.3,rows = Description, columns = enrichment, values = p.adjust, annotation_row = geneset, gaps_row = geneset, gaps_col = enrichment
+))
+  }
+```
+
+**None of the tissue-enriched DEGs fall into significant pathways across multiple pathway databases (KEGG, GO-BP, MSigDB hallmark and Reactome) when using ORA approach along with the universe argument**
+
+Let's see if change of approach from ORA to GSEA lead to better results.
+
+ORA method is easy to conduct, but it will lose information when genes’ differences are slight. For example, if a gene is essential in some pathway but is low-expressed, it will be filtered by fold change cutoff. Unlike ORA, FCS tools do not set a threshold for differentially expressed genes. Instead, it gives each detected gene a differential expression score and then evaluates whether the scores are more positive or negative than expected by chance for each gene set.
+
+#### Pathway analysis using the tissue-specific DEGs (Main effects) using GSEA
+
+```{r GSEA approach using the res1 output}
+rankedGenes <- res1 %>%
+  drop_na(gene, padj, log2FoldChange) %>%
+  mutate(rank = -log10(pvalue) * sign(log2FoldChange),
+         entrez = transId(gene, transTo = "entrez", keepNA = T, unique = T, org = "mouse")$entrezid) %>%
+  filter(!is.na(rank) & is.finite(rank)) %>%
+  arrange(desc(rank)) %>%
+  pull(rank, gene)
+#head(rankedGenes)
+
+df1 = NULL
+barplots_1 = list()
+
+for (i in 1:length(gene_set)) {
+  gsea_results1 = safely(genGSEA)(genelist = rankedGenes,
+                                  p_cutoff = 1,
+                                  q_cutoff = 1,
+                                geneset = gene_set[[i]])$result
+  
+  if (!is.null(gsea_results1$gsea_df)) {
+    
+    barplots_1[[i]] <- plotGSEA(gsea_results1, plot_type = "bar", colour = c("navyblue", "orange"))
+    
+    df1 = rbind_common(df1, gsea_results1$gsea_df %>% 
+                         mutate(enrichment = ifelse(NES > 0, "Heart", "Liver"),
+                                geneset = gene_set[[i]]$type))
+  }
+}
+
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "Pathway table across multiple databases and tissue conditions"
+#|   - "Signficant pathways (p.adjust < 0.05) identified using GSEA using multiple databases"
+if (!is.null(df1)) {df1 %>% filter(p.adjust < 0.05) %>% gt_preview(top_n = 10)}
+if (!is.null(df1)) {
+  print(tidyheatmap(df = df1 %>% filter(p.adjust < 0.05) %>% mutate(p.adjust = -log10(p.adjust)) %>% arrange(geneset) %>% remove_rownames(), color_legend_n = 1, color_legend_min = 0, color_legend_max = 1.3,rows = Description, columns = enrichment, values = p.adjust, annotation_row = geneset, gaps_row = geneset, gaps_col = enrichment, legend_labels = "-log10(p.adjust)"
+))
+  }
+```
+All the significant pathways (p.adjust < 0.05) are labelled in blue color. 
+
+**Conclusion: Liver-specific DEGs are enriched in mitochondrial, muscle biogenesis, respiration related processes across multiple databases whereas heart-specific DEGs are associated with immune, coagulation, MYC targets related processes.**
+
+### Main effects due to timepoint
+
+#### Comparison of Wald versus LRT test DEGs \[Main effects due to time\]
+
+```{r Comparison of Wald test and LRT - Timepoint}
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "DEGs obtained with Wald test [Main effects due to time]"
+#|   - "DEGs obtained with paired design and with using LRT [Main effects due to time]"
+#|   - "Upset plot showing the common DEGs between comparisons and enrichment directionality [Main effects due to time]"
+dds <- DESeqDataSetFromMatrix(countData = cts,
+                              colData = coldata,
+                              design = ~ time) #not accounting for timepoint
+dds <- DESeq(dds)
+res4 <- results(dds, contrast = c("time", "T12", "T0"))
+res4 <- res4 %>%
+  as.data.frame() %>%
+  rownames_to_column("gene") %>%
+  drop_na(log2FoldChange,padj) %>%
+  mutate(DEG = case_when(log2FoldChange > 1 & padj < 0.01 ~ "up",
+                         log2FoldChange < -1 & padj < 0.01 ~ "down",
+                         TRUE ~ "non-sig"),
+         comparison = "T12_vs_T0-Wald",
+         enrichment = case_when(DEG == "up" ~ "T12",
+                                DEG == "down" ~ "T0",
+                                TRUE ~ "non-sig")) 
+#res4 <- add_gene_name(res4)
+res4 %>% dplyr::count(comparison, enrichment) %>% gt()
+#LRT test
+dds <- DESeqDataSetFromMatrix(countData = cts,
+                              colData = coldata,
+                              design = ~ tissue + time) #accounting for timepoint in design
+dds <- DESeq(dds, test = "LRT", full = ~ tissue + time, reduced = ~ tissue)
+res5 <- results(dds, contrast = c("time", "T12", "T0"))
+res5 <- res5 %>%
+  as.data.frame() %>%
+  rownames_to_column("gene") %>%
+  drop_na(log2FoldChange,padj) %>%
+  mutate(DEG = case_when(log2FoldChange > 1 & padj < 0.01 ~ "up",
+                         log2FoldChange < -1 & padj < 0.01 ~ "down",
+                         TRUE ~ "non-sig"),
+         comparison = "T12_vs_T0-LRT",
+         enrichment = case_when(DEG == "up" ~ "T12",
+                                DEG == "down" ~ "T0",
+                                TRUE ~ "non-sig"))
+#res5 <- add_gene_name(res5)
+res5 %>% dplyr::count(comparison, enrichment) %>% gt()
+res3 = rbind_common(res4,res5)
+#split(res3, f = list(res3$comparison, res3$enrichment))
+#UpSetR::upset()
+plotVenn(map(split(res3, f = list(res3$comparison, res3$enrichment)), function(x) x %>% pull(gene)),
+         use_venn = F,
+         main_text_size = 15,
+         legend_text_size = 8,
+         legend_position = "left")
+```
+
+DEGs with and without accounting for tissue yields similar DEGs between Wald and LRT tests suggesting that both designs are okay to detect main effects due to timepoints.
+
+#### Visualization of timepoint-specific DEGs using DESeq2
+
+I am going with res4 object that uses Wald test to identify main effects due to tissue. Wald test DEGs are all represented in the LRT DEGs as determined by the Upset plot shown above.
+
+```{r Identification of timepoint-specific DEGs}
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "Number of identified DEGs (|logFC| > 1 & padj < 0.01)"
+#|   - "tissue-specific DEGs agnostic of the sampling timepoint"
+
+#Volcano plot
+EnhancedVolcano::EnhancedVolcano(res4,
+                                 x = "log2FoldChange",
+                                 y = "padj",
+                                 lab = res4$gene,
+                                 pCutoff = 0.01,
+                                 FCcutoff = 1,
+                                 title = "T12 vs T0 comparison [Single-factor design]",
+                                 subtitle = "Differential expression analysis using DESeq2",
+                                 labSize = 2.0
+                                 )
+
+#test this code
+as_tibble(counts(dds[res4$gene[1:2], ], normalize = TRUE),
+          rownames = 'gene') %>%
+  pivot_longer(names_to = "sample", values_to = "counts", -gene) %>%
+  left_join(as_tibble(colData(dds), rownames = "group")) %>%
+  #mutate(name = paste0(substr(Type, 1, 5), '_', Condition, '_', 1:3)) %>%
+  ggplot(aes(x = group, y = counts, fill = tissue)) +
+  geom_bar(stat = 'identity', color = "gray30") +
+  facet_wrap( ~ gene, scales = "free") +
+  theme(axis.text.x = element_text(size = 8, angle = 90),
+        axis.title.x = element_blank(),
+        legend.position = "right",
+        legend.text = element_text(size = 7),
+        legend.title = element_text(size = 7))
+```
+
+The timepoint based DEGs do not have specific pattern because enrichment can be at any tissue and timepoint combination
+
+#### Expression pattern of top time-specific DEGs
+
+```{r Expression pattern of top time-specific DEGs}
+significant_genes <- res4 %>%
+  as.data.frame() %>%
+  filter(padj < 0.01, abs(log2FoldChange) > 1) %>%
+  slice_max(abs(log2FoldChange), n = 10) %>%
+  pull(gene)
+sig_mat <- normalized_cts[significant_genes,]
+col_anno = HeatmapAnnotation(df = coldata %>% select(tissue, time),
+                             col = list(time = c("T0" = "red", "T12" = "blue")))
+
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "Boxplot of the only DEG"
+
+significant_genes <- res4 %>%
+  as.data.frame() %>%
+  filter(padj < 0.01, abs(log2FoldChange) > 1) %>%
+  slice_max(abs(log2FoldChange), n = 12) %>%
+  pull(gene)
+
+boxplot_1 <- lapply(significant_genes, function(x) {
+  plotCounts(dds, gene = x,
+             intgroup = c("tissue","time"),
+             returnData = T) %>%
+    ggplot(aes(x = paste(tissue,time), y = log2(count), fill = tissue)) +
+    geom_boxplot() + geom_jitter(width = 0.1) + 
+    xlab("Experimental group") + ylab("Normalized counts") + 
+    theme(axis.text.x = element_text(angle = 90)) +
+    ggtitle(paste0(x))
+    })
+wrap_plots(boxplot_1, ncol = 3)                             
+```
+
+The timepoint based DEGs do not have specific pattern because enrichment can be at any tissue and timepoint combination
+
+
+#### Pathway analysis using the timepoint-specific DEGs (Main effects) using ORA
+
+```{r}
+# perform pathway analysis using multiple pathway genesets
+#empty lists for adding in the pathway results
+barplots_1 <- list()
+df1 = NULL
+
+for (i in 1:length(gene_set)) {
+  go_results1 = safely(genORA)(res4 %>% filter(enrichment == "T12") %>% pull(gene),
+                               geneset = gene_set[[i]],
+                               p_cutoff = 1, #to retrieve the whole output
+                               q_cutoff = 1, #to retrieve the whole output
+                               universe = rownames(res4))$result
+  
+  if (!is.null(go_results1)) {
+    go_results1$geneset = gene_set[[i]]$type
+    go_results1$enrichment = "T12"
+  }
+  
+  go_results2 = safely(genORA)(res4 %>% filter(enrichment == "T0") %>% pull(gene),
+                               geneset = gene_set[[i]],
+                               p_cutoff = 1, #to retrieve the whole output
+                               q_cutoff = 1, #to retrieve the whole output
+                               universe = rownames(res4))$result
+  
+  if (!is.null(go_results2)) {
+    go_results2$geneset = gene_set[[i]]$type
+    go_results2$enrichment = "T0"
+  }
+  
+  df1 <- rbind_common(df1, go_results1, go_results2)
+  
+  if (!is.null(go_results1) & !is.null(go_results2)) {
+  p1 <- plotEnrich(go_results1,
+                   plot_type = "bar",
+                   n_term = 10,
+                   term_metric = "FoldEnrich",
+                   stats_metric = "qvalue")
+  p2 <- plotEnrich(go_results2,
+                   plot_type = "bar",
+                   n_term = 10,
+                   term_metric = "FoldEnrich",
+                   stats_metric = "qvalue")
+  barplots_1[[i]] <- p1 + p2
+  
+  }
+}
+
+p1 <- plotEnrich(go_results1, plot_type = "dot")
+
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "Pathway enrichment stats across multiple databases and tissue conditions"
+#|   - "Significant pathways (labelled in blue) across timepoints when using ORA and multiple pathway databases"
+if (!is.null(df1)) {df1 %>% filter(p.adjust < 0.05) %>% gt_preview(top_n = 10)}
+if (nrow(df1 %>% filter(p.adjust < 0.05)) >= 1) {
+  print(tidyheatmap(df = df1 %>% filter(p.adjust < 0.05) %>% mutate(p.adjust = -log10(p.adjust)) %>% arrange(geneset) %>% remove_rownames(), color_legend_n = 1, color_legend_min = 0, color_legend_max = 1.3,rows = Description, columns = enrichment, values = p.adjust, annotation_row = geneset, gaps_row = geneset, gaps_col = enrichment, legend_labels = "-log10(p.adjust)"
+))
+  }
+```
+
+**No pathways associated with any of T0 or T12 main effect DEGs.**
+
+Let's see if change of approach from ORA to GSEA lead to different results.
+
+ORA method is easy to conduct, but it will lose information when genes’ differences are slight. For example, if a gene is essential in some pathway but is low-expressed, it will be filtered by fold change cutoff. Unlike ORA, FCS tools do not set a threshold for differentially expressed genes. Instead, it gives each detected gene a differential expression score and then evaluates whether the scores are more positive or negative than expected by chance for each gene set.
+
+#### Pathway analysis using the tissue-specific DEGs (Main effects) using GSEA
+
+```{r GSEA approach using the res4 output}
+rankedGenes <- res4 %>%
+  drop_na(gene, padj, log2FoldChange) %>%
+  mutate(rank = -log10(pvalue) * sign(log2FoldChange),
+         entrez = transId(gene, transTo = "entrez", keepNA = T, unique = T, org = "mouse")$entrezid) %>%
+  filter(!is.na(rank) & is.finite(rank)) %>%
+  arrange(desc(rank)) %>%
+  pull(rank, gene)
+#head(rankedGenes)
+
+df1 = NULL
+barplots_1 = list()
+
+for (i in 1:length(gene_set)) {
+  gsea_results1 = safely(genGSEA)(genelist = rankedGenes,
+                                  p_cutoff = 1,
+                                  q_cutoff = 1,
+                                geneset = gene_set[[i]])$result
+  
+  if (!is.null(gsea_results1$gsea_df)) {
+    
+    barplots_1[[i]] <- plotGSEA(gsea_results1, plot_type = "bar", colour = c("navyblue", "orange"))
+    
+    df1 = rbind_common(df1, gsea_results1$gsea_df %>% 
+                         mutate(enrichment = ifelse(NES > 0, "T12", "T0"),
+                                geneset = gene_set[[i]]$type))
+  }
+}
+
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "Pathway table across multiple databases and tissue conditions"
+#|   - "Signficant pathways (p.adjust < 0.01) identified using GSEA using multiple databases"
+if (!is.null(df1)) {df1 %>% filter(p.adjust < 0.05) %>% gt_preview(top_n = 10)}
+if (!is.null(df1)) {
+  print(tidyheatmap(df = df1 %>% filter(p.adjust < 0.05) %>% mutate(p.adjust = -log10(p.adjust)) %>% arrange(geneset) %>% remove_rownames(), color_legend_n = 1, color_legend_min = 0, color_legend_max = 1.3,rows = Description, columns = enrichment, values = p.adjust, annotation_row = geneset, gaps_row = geneset, gaps_col = enrichment, legend_labels = "-log10(p.adjust)"
+))
+  }
+```
+All the significant pathways (p.adjust < 0.01) are labelled in blue color. 
+To beautify the output and the plots, I resorted to a stricter cutoff for pathways i.e. p.adjust < 0.01 instead of p.adjust < 0.05
+
+**Conclusion: T0-enriched DEGs fell into MYC targets, MTORC1 signaling pathways when using multiple pathway databases (KEGG, GO-BP, MSigDB hallmark and Reactome) when using GSEA approach. GSEA approach also confirmed the findings from the ORA approach. In addition, T12 associated pathways belong to chromatin remodeling, histone modification, KRAS and other pathway terms. The statistically robust approach GSEA is able to identify more pathways compared to ORA which is surprising.**
+
+
+### Interaction effects
+
+#### Comparison of Wald versus LRT test - interaction effects
+
+**DEGs can be defined genes passing the threshold: abs(logFC) \> 1 & padj \< 0.01**
+
+This is useful to detect interaction between tissue and timepoint. 
+
+```{r Comparison of Wald test and LRT - interaction effects}
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "DEGs obtained with Wald test [Main effects due to tissue]"
+#|   - "DEGs obtained with paired design and with using LRT [Main effects due to tissue]"
+#|   - "Upset plot showing the common DEGs between comparisons and enrichment directionality [Main effects due to tissue]"
+dds <- DESeqDataSetFromMatrix(countData = cts,
+                              colData = coldata,
+                              design = ~ tissue * time) #interaction term
+dds <- DESeq(dds)
+
+#vd <- VisualizeDesign(sampleData = coldata,
+ #                     designFormula = ~ tissue * time)
+#print(vd$plotlist) #can visualize the model matrix and the various coefficients
+
+res6 <- results(dds, name = "tissueLiver.timeT12")
+res6 <- res6 %>%
+  as.data.frame() %>%
+  rownames_to_column("gene") %>%
+  drop_na(log2FoldChange,padj) %>%
+  mutate(DEG = case_when(log2FoldChange > 1 & padj < 0.01 ~ "up",
+                         log2FoldChange < -1 & padj < 0.01 ~ "down",
+                         TRUE ~ "non-sig"),
+         comparison = "Interaction-Wald",
+         enrichment = case_when(DEG == "up" ~ "Heart",
+                                DEG == "down" ~ "Liver",
+                                TRUE ~ "non-sig")) 
+#res6 <- add_gene_name(res6)
+res6 %>% dplyr::count(comparison, enrichment) %>% gt()
+
+#LRT test
+dds <- DESeqDataSetFromMatrix(countData = cts,
+                              colData = coldata,
+                              design = ~ tissue * time) #accounting for timepoint in design
+dds <- DESeq(dds, test = "LRT", full = ~ tissue * time, reduced = ~ tissue + time)
+res7 <- results(dds, name = "tissueLiver.timeT12")
+res7 <- res7 %>%
+  as.data.frame() %>%
+  rownames_to_column("gene") %>%
+  drop_na(log2FoldChange,padj) %>%
+  mutate(DEG = case_when(log2FoldChange > 1 & padj < 0.01 ~ "up",
+                         log2FoldChange < -1 & padj < 0.01 ~ "down",
+                         TRUE ~ "non-sig"),
+         comparison = "Interaction-LRT",
+         enrichment = case_when(DEG == "up" ~ "Heart",
+                                DEG == "down" ~ "Liver",
+                                TRUE ~ "non-sig")) 
+#res7 <- add_gene_name(res7)
+res7 %>% dplyr::count(comparison, enrichment) %>% gt()
+res8 = rbind_common(res6,res7)
+#split(res3, f = list(res3$comparison, res3$enrichment))
+#UpSetR::upset()
+plotVenn(map(split(res8, f = list(res8$comparison, res8$enrichment)), function(x) x %>% pull(gene)),
+         use_venn = F,
+         main_text_size = 15,
+         legend_text_size = 8,
+         legend_position = "left")
+```
+
+**No DEGs were identified using the interaction design.**
+
+#### Visualization of interaction-specific DEGs using DESeq2
+
+I am going with res6 object that uses Wald test to identify main effects due to tissue. Wald test DEGs are all represented in the LRT DEGs as determined by the previous Upset plot
+
+```{r Identification of interaction-specific DEGs}
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "Number of identified DEGs (|logFC| > 1 & padj < 0.01)"
+#|   - "tissue-specific DEGs agnostic of the sampling timepoint"
+
+#Volcano plot
+EnhancedVolcano::EnhancedVolcano(res6,
+                                 x = "log2FoldChange",
+                                 y = "padj",
+                                 lab = res6$gene,
+                                 pCutoff = 0.01,
+                                 FCcutoff = 1,
+                                 title = "comparison [Interaction effect]",
+                                 subtitle = "Differential expression analysis using DESeq2",
+                                 labSize = 2.0
+                                 )
+
+#test this code
+as_tibble(counts(dds[res6$gene[1:2], ], normalize = TRUE),
+          rownames = 'gene') %>%
+  pivot_longer(names_to = "sample", values_to = "counts", -gene) %>%
+  left_join(as_tibble(colData(dds), rownames = "group")) %>%
+  #mutate(name = paste0(substr(Type, 1, 5), '_', Condition, '_', 1:3)) %>%
+  ggplot(aes(x = group, y = counts, fill = tissue)) +
+  geom_bar(stat = 'identity', color = "gray30") +
+  facet_wrap( ~ gene, scales = "free") +
+  theme(axis.text.x = element_text(size = 8, angle = 90),
+        axis.title.x = element_blank(),
+        legend.position = "right",
+        legend.text = element_text(size = 7),
+        legend.title = element_text(size = 7))
+```
+
+The timepoint based DEGs do not have specific pattern because enrichment can be at any tissue and timepoint combination
+
+#### Expression pattern of top interaction-specific DEGs
+
+```{r Expression pattern of top interaction-specific DEGs}
+significant_genes <- res6 %>%
+  as.data.frame() %>%
+  filter(padj < 0.01, abs(log2FoldChange) > 1) %>%
+  slice_max(abs(log2FoldChange), n = 50) %>%
+  pull(gene)
+sig_mat <- normalized_cts[significant_genes,]
+col_anno = HeatmapAnnotation(df = coldata %>% select(tissue, time),
+                             col = list(time = c("T0" = "red", "T12" = "blue")))
+
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "Heatmap of top 50 DEGs sorted by |logFC| (|logFC| > 1 & padj < 0.01)"
+#|   - "Boxplot of top 12 DEGs"
+Heatmap(t(scale(t(sig_mat))),
+        top_annotation = col_anno,
+        show_row_names = T,
+        name = "Scaled normalized\nexpression",
+        row_names_gp = gpar(fontsize = 6),
+        column_names_gp = gpar(fontsize = 7)
+        )
+
+significant_genes <- res6 %>%
+  as.data.frame() %>%
+  filter(padj < 0.01, abs(log2FoldChange) > 1) %>%
+  slice_max(abs(log2FoldChange), n = 12) %>%
+  pull(gene)
+
+boxplot_1 <- lapply(significant_genes, function(x) {
+  plotCounts(dds, gene = x,
+             intgroup = c("tissue","time"),
+             returnData = T) %>%
+    ggplot(aes(x = paste(tissue,time), y = log2(count), fill = tissue)) +
+    geom_boxplot() + geom_jitter(width = 0.1) + 
+    xlab("Experimental group") + ylab("Normalized counts") + 
+    theme(axis.text.x = element_text(angle = 90)) +
+    ggtitle(paste0(x))
+    })
+if (length(boxplot_1) >= 1) { wrap_plots(boxplot_1)}                             
+```
+
+
+
+## Paired contrast analysis - Difference between Liver and Heart at each timepoint
+
+```{r Identification of DEGs between Liver and Heart for every timepoint}
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "Number of identified DEGs (|logFC| > 1 & padj < 0.01) by comparing Heart versus Liver at time T0"
+#|   - "Number of identified DEGs (|logFC| > 1 & padj < 0.01) by comparing Heart versus Liver at time T12"
+#|   - "Upset plot showing overlap between DEGs"
+coldata$group = paste0(coldata$tissue, "_", coldata$time)
+dds <- DESeqDataSetFromMatrix(countData = cts,
+                              colData = coldata,
+                              design = ~ group)
+dds <- DESeq(dds)
+
+#Comparison between Heart and Liver at time T0
+res9 <- results(dds, contrast = c("group", "Heart_T0", "Liver_T0"))
+res9 <- res9 %>%
+  as.data.frame() %>%
+  rownames_to_column("gene") %>%
+  drop_na(log2FoldChange,padj) %>%
+  mutate(DEG = case_when(log2FoldChange > 1 & padj < 0.01 ~ "up",
+                         log2FoldChange < -1 & padj < 0.01 ~ "down",
+                         TRUE ~ "non-sig"),
+         comparison = "Heart_vs_Liver-Time0-LRT",
+         enrichment = case_when(DEG == "up" ~ "Heart_T0",
+                                DEG == "down" ~ "Liver_T0",
+                                TRUE ~ "non-sig"))
+res9 %>% dplyr::count(comparison, enrichment) %>% gt()
+
+#Comparison between Heart and Liver at time T12
+res10 <- results(dds, contrast = c("group", "Heart_T12", "Liver_T12"))
+res10 <- res10 %>%
+  as.data.frame() %>%
+  rownames_to_column("gene") %>%
+  drop_na(log2FoldChange,padj) %>%
+  mutate(DEG = case_when(log2FoldChange > 1 & padj < 0.01 ~ "up",
+                         log2FoldChange < -1 & padj < 0.01 ~ "down",
+                         TRUE ~ "non-sig"),
+         comparison = "Heart_vs_Liver-Time12-LRT",
+         enrichment = case_when(DEG == "up" ~ "Heart_T12",
+                                DEG == "down" ~ "Liver_T12",
+                                TRUE ~ "non-sig"))
+res10 %>% dplyr::count(comparison, enrichment) %>% gt()
+
+res3 = rbind_common(res9,res10)
+plotVenn(map(split(res3, f = list(res3$comparison, res3$enrichment)), function(x) x %>% pull(gene)),
+         use_venn = F,
+         main_text_size = 15,
+         legend_text_size = 8,
+         legend_position = "left")
+```
+
+
+
+#### Pathway analysis for tissue-enriched DEGs for timepoint T0
+
+
+```{r}
+# perform pathway analysis using multiple pathway genesets
+#empty lists for adding in the pathway results
+barplots_1 <- list()
+df1 = NULL
+
+for (i in 1:length(gene_set)) {
+  go_results1 = safely(genORA)(res9 %>% filter(enrichment == "Heart") %>% pull(gene),
+                               geneset = gene_set[[i]],
+                               p_cutoff = 1, #to retrieve the whole output
+                               q_cutoff = 1, #to retrieve the whole output
+                               universe = rownames(res9))$result
+  
+  if (!is.null(go_results1)) {
+    go_results1$geneset = gene_set[[i]]$type
+    go_results1$enrichment = "Heart"
+  }
+  
+  go_results2 = safely(genORA)(res9 %>% filter(enrichment == "Liver") %>% pull(gene),
+                               geneset = gene_set[[i]],
+                               p_cutoff = 1, #to retrieve the whole output
+                               q_cutoff = 1, #to retrieve the whole output
+                               universe = rownames(res9))$result
+  
+  if (!is.null(go_results2)) {
+    go_results2$geneset = gene_set[[i]]$type
+    go_results2$enrichment = "Liver"
+  }
+  
+  df1 <- rbind_common(df1, go_results1, go_results2)
+  
+  if (!is.null(go_results1) & !is.null(go_results2)) {
+  p1 <- plotEnrich(go_results1,
+                   plot_type = "bar",
+                   n_term = 10,
+                   term_metric = "FoldEnrich",
+                   stats_metric = "qvalue")
+  p2 <- plotEnrich(go_results2,
+                   plot_type = "bar",
+                   n_term = 10,
+                   term_metric = "FoldEnrich",
+                   stats_metric = "qvalue")
+  barplots_1[[i]] <- p1 + p2
+  
+  }
+}
+
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "Pathway enrichment stats across multiple databases and tissue conditions"
+#|   - "Significant pathways (labelled in blue) across timepoints when using ORA and multiple pathway databases"
+if(!is.null(df1)) { df1 %>% head() %>% gt_preview(top_n = 10) }
+if (!is.null(df1)) {
+  print(tidyheatmap(df = df1 %>% filter(p.adjust < 0.05) %>% mutate(p.adjust = -log10(p.adjust)) %>% arrange(geneset) %>% remove_rownames(), color_legend_n = 1, color_legend_min = 0, color_legend_max = 1.3,rows = Description, columns = enrichment, values = p.adjust, annotation_row = geneset, gaps_row = geneset, gaps_col = enrichment
+))
+  }
+```
+
+No pathways significant for Heart and Liver DEGs for timepoint T0. 
+
+#### Pathway analysis for tissue-enriched DEGs for timepoint T12
+
+```{r}
+# perform pathway analysis using multiple pathway genesets
+#empty lists for adding in the pathway results
+barplots_1 <- list()
+df1 = NULL
+
+for (i in 1:length(gene_set)) {
+  go_results1 = safely(genORA)(res10 %>% filter(enrichment == "Heart") %>% pull(gene),
+                               geneset = gene_set[[i]],
+                               p_cutoff = 1, #to retrieve the whole output
+                               q_cutoff = 1, #to retrieve the whole output
+                               universe = rownames(res10))$result
+  
+  if (!is.null(go_results1)) {
+    go_results1$geneset = gene_set[[i]]$type
+    go_results1$enrichment = "Heart"
+  }
+  
+  go_results2 = safely(genORA)(res10 %>% filter(enrichment == "Liver") %>% pull(gene),
+                               geneset = gene_set[[i]],
+                               p_cutoff = 1, #to retrieve the whole output
+                               q_cutoff = 1, #to retrieve the whole output
+                               universe = rownames(res10))$result
+  
+  if (!is.null(go_results2)) {
+    go_results2$geneset = gene_set[[i]]$type
+    go_results2$enrichment = "Liver"
+  }
+  
+  df1 <- rbind_common(df1, go_results1, go_results2)
+  
+  if (!is.null(go_results1) & !is.null(go_results2)) {
+  p1 <- plotEnrich(go_results1,
+                   plot_type = "bar",
+                   n_term = 10,
+                   term_metric = "FoldEnrich",
+                   stats_metric = "qvalue")
+  p2 <- plotEnrich(go_results2,
+                   plot_type = "bar",
+                   n_term = 10,
+                   term_metric = "FoldEnrich",
+                   stats_metric = "qvalue")
+  barplots_1[[i]] <- p1 + p2
+  
+  }
+}
+
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "Pathway enrichment stats across multiple databases and tissue conditions"
+#|   - "Significant pathways (labelled in blue) across timepoints when using ORA and multiple pathway databases"
+if(!is.null(df1)) { df1 %>% head() %>% gt_preview(top_n = 10) }
+if (!is.null(df1)) {
+  print(tidyheatmap(df = df1 %>% filter(p.adjust < 0.05) %>% mutate(p.adjust = -log10(p.adjust)) %>% arrange(geneset) %>% remove_rownames(), color_legend_n = 1, color_legend_min = 0, color_legend_max = 1.3,rows = Description, columns = enrichment, values = p.adjust, annotation_row = geneset, gaps_row = geneset, gaps_col = enrichment
+))
+  }
+```
+
+No pathways significant for Heart and Liver DEGs for timepoint t12. 
+
+## Heirarchical clustering of all the DEGs
+Main effect DEGs are in res1 (tissue), res4 (Timepoint) objects whereas interaction specific DEGs are in res6 objects. res9 and res10 objects contain DEGs between Heart and Liver comparison for timepoints T0 and T12 respectively. 
+
+```{r}
+significant_genes <- unique(c(res1 %>% as.data.frame() %>% filter(padj < 0.01 & abs(log2FoldChange) > 1) %>% pull(gene), res4 %>% as.data.frame() %>% filter(padj < 0.01 & abs(log2FoldChange) > 1) %>% pull(gene), res6 %>% as.data.frame() %>% filter(padj < 0.01 & abs(log2FoldChange) > 1) %>% pull(gene), res9 %>% as.data.frame() %>% filter(padj < 0.01 & abs(log2FoldChange) > 1) %>% pull(gene), res10 %>% as.data.frame() %>% filter(padj < 0.01 & abs(log2FoldChange) > 1) %>% pull(gene)))
+sig_mat <- normalized_cts[significant_genes,]
+col_anno = HeatmapAnnotation(df = coldata %>% select(tissue, time),
+                             col = list(tissue = c("Liver" = "red", "Heart" = "blue")))
+
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "Heatmap of top 50 DEGs sorted by |logFC| (|logFC| > 1 & padj < 0.01)"
+#|   - "Boxplot of top 12 DEGs"
+Heatmap(t(scale(t(sig_mat))),
+        top_annotation = col_anno,
+        show_row_names = F,
+        cluster_rows = T,
+        cluster_columns = T,
+        column_km = 2,
+        row_km = 2,
+        row_names_gp = gpar(fontsize = 6),
+        column_names_gp = gpar(fontsize = 7),
+        name = "Scaled normalized\nexpression"
+        )
+
+```
+From the heatmap, we see that clustering of samples based on the tissue then the timepoint. tissue effects drive major source of variation compared to the timepoint. I roughly divided the DEGs obtained from various comparisons into 4 clusters -
+Cluster 1 and 2 are associated with genes/markers active in either tissue irrespective of the timepoint. 
+
+## Plot the expression pattern of the DEGs obtained from all the above comparisons
+
+```{r}
+#| layout-ncol: 1
+#| fig-cap: 
+#|   - "Grouping all the DEGs into clusters based on expression pattern trends"
+#|   - "Clusters and their associated genes"
+ma = assay(vst(dds))[significant_genes,]
+coldata1 = coldata %>% column_to_rownames("sample") %>%
+                          mutate(group = paste0(tissue,"_", time),
+                                 group = factor(group))
+clusters <- degPatterns(ma, 
+                        metadata = coldata1, 
+                        time = "group", plot = T)
+
+clusters$df %>% gt_preview(top_n = 10)
+```
+ The output is the list of genes along with cluster IDs that facilitate filtering of genes with a particular expression pattern trend. 
+ 
+### Pathway analysis of various clusters obtained from the above analysis
+
+```{r}
+hg_gs = geneset::getMsigdb(org = "human", category = "H")
+
+df1 <- NULL
+
+df1 <- lapply(unique(clusters$df$cluster), function(x) {
+  
+  go_results1 = safely(genORA)(clusters$df %>% filter(cluster == x) %>% pull(genes),
+                               geneset = hg_gs,
+                               #p_cutoff = 1, #to retrieve the whole output
+                               #q_cutoff = 1, #to retrieve the whole output
+                               universe = clusters$df %>% pull(genes))$result
+})
+
+list_rbind(df1, names_to = "cluster")
+```
+Cluster 1 (genes active in liver irrespective of timepoint) genes are associated with HALLMARK_XENOBIOTIC_METABOLISM & HALLMARK_COAGULATION pathways.
+Cluster 4 (genes active in heart irrespective of timepoint) genes are associated with HALLMARK_MYOGENESIS & HALLMARK_OXIDATIVE_PHOSPHORYLATION pathways.
+
+```{r}
+sessionInfo()
+```
+
