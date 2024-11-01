@@ -101,8 +101,6 @@ add_gene_name<- function(res){
 
 ### Importing the counts matrix
 
-The counts file were imported from the publication <https://physoc.onlinelibrary.wiley.com/doi/10.1113/JP285585>. The authors investigated the outcome of perturbations of the primary and secondary feedback loops of the molecular clock in skeletal muscle by specific gene ablation of Period circadian regulator 2 (Per2) and RAR-related orphan receptor alpha (Rorα), respectively. 
-
 
 ```{r Importing the counts and conversion to a DESeq object}
 #loading the length-scaled counts tsv file
@@ -817,7 +815,7 @@ if (!is.null(df1)) {
 All the significant pathways (p.adjust < 0.01) are labelled in blue color. 
 To beautify the output and the plots, I resorted to a stricter cutoff for pathways i.e. p.adjust < 0.01 instead of p.adjust < 0.05
 
-**Conclusion: T0-enriched DEGs fell into MYC targets, MTORC1 signaling pathways when using multiple pathway databases (KEGG, GO-BP, MSigDB hallmark and Reactome) when using GSEA approach. GSEA approach also confirmed the findings from the ORA approach. In addition, T12 associated pathways belong to chromatin remodeling, histone modification, KRAS and other pathway terms. The statistically robust approach GSEA is able to identify more pathways compared to ORA which is surprising.**
+**Conclusion: T0-enriched DEGs fell into MYC targets, MTORC1 signaling pathways when using multiple pathway databases (KEGG, GO-BP, MSigDB hallmark and Reactome) when using GSEA approach. GSEA approach also confirmed the findings from the ORA approach. In addition, T12 associated pathways belong to chromatin remodeling, histone modification, KRAS and other pathway terms. The statistically robust approach GSEA is able to identify more pathways compared to ORA (overrepresentation test) which is surprising.**
 
 
 ### Interaction effects
