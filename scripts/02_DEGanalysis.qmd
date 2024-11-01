@@ -452,6 +452,7 @@ wrap_plots(boxplot_1, ncol = 3)
 #### Pathway analysis using the tissue-specific DEGs (Main effects) using ORA
 
 ```{r}
+#| fig-keep: "none"
 # perform pathway analysis using multiple pathway genesets
 msigdb_gs <- geneset::getMsigdb(org = "mouse", category = "H")
 go_gs <- geneset::getGO(org = "mouse", ont = "bp")
@@ -504,7 +505,10 @@ for (i in 1:length(gene_set)) {
   
   }
 }
+```
 
+
+```{r Plot pathway profile}
 #| layout-ncol: 1
 #| fig-cap: 
 #|   - "Pathway profile across multiple databases and tissue conditions"
@@ -523,7 +527,8 @@ ORA method is easy to conduct, but it will lose information when genes’ differ
 
 #### Pathway analysis using the tissue-specific DEGs (Main effects) using GSEA
 
-```{r GSEA approach using the res1 output}
+```{r}
+#| fig-keep: "none"
 rankedGenes <- res1 %>%
   drop_na(gene, padj, log2FoldChange) %>%
   mutate(rank = -log10(pvalue) * sign(log2FoldChange),
@@ -551,7 +556,10 @@ for (i in 1:length(gene_set)) {
                                 geneset = gene_set[[i]]$type))
   }
 }
+```
 
+
+```{r}
 #| layout-ncol: 1
 #| fig-cap: 
 #|   - "Pathway table across multiple databases and tissue conditions"
@@ -706,6 +714,7 @@ The timepoint based DEGs do not have specific pattern because enrichment can be 
 #### Pathway analysis using the timepoint-specific DEGs (Main effects) using ORA
 
 ```{r}
+#| fig-keep: "none"
 # perform pathway analysis using multiple pathway genesets
 #empty lists for adding in the pathway results
 barplots_1 <- list()
@@ -751,9 +760,10 @@ for (i in 1:length(gene_set)) {
   
   }
 }
+```
 
-p1 <- plotEnrich(go_results1, plot_type = "dot")
 
+```{r}
 #| layout-ncol: 1
 #| fig-cap: 
 #|   - "Pathway enrichment stats across multiple databases and tissue conditions"
@@ -773,7 +783,8 @@ ORA method is easy to conduct, but it will lose information when genes’ differ
 
 #### Pathway analysis using the tissue-specific DEGs (Main effects) using GSEA
 
-```{r GSEA approach using the res4 output}
+```{r}
+#| fig-keep: "none"
 rankedGenes <- res4 %>%
   drop_na(gene, padj, log2FoldChange) %>%
   mutate(rank = -log10(pvalue) * sign(log2FoldChange),
@@ -801,7 +812,10 @@ for (i in 1:length(gene_set)) {
                                 geneset = gene_set[[i]]$type))
   }
 }
+```
 
+
+```{r}
 #| layout-ncol: 1
 #| fig-cap: 
 #|   - "Pathway table across multiple databases and tissue conditions"
@@ -943,13 +957,13 @@ col_anno = HeatmapAnnotation(df = coldata %>% select(tissue, time),
 #| fig-cap: 
 #|   - "Heatmap of top 50 DEGs sorted by |logFC| (|logFC| > 1 & padj < 0.01)"
 #|   - "Boxplot of top 12 DEGs"
-Heatmap(t(scale(t(sig_mat))),
-        top_annotation = col_anno,
-        show_row_names = T,
-        name = "Scaled normalized\nexpression",
-        row_names_gp = gpar(fontsize = 6),
-        column_names_gp = gpar(fontsize = 7)
-        )
+#Heatmap(t(scale(t(sig_mat))),
+ #       top_annotation = col_anno,
+  #      show_row_names = T,
+   #     name = "Scaled normalized\nexpression",
+    #    row_names_gp = gpar(fontsize = 6),
+     #   column_names_gp = gpar(fontsize = 7)
+      #  )
 
 significant_genes <- res6 %>%
   as.data.frame() %>%
@@ -1030,6 +1044,7 @@ plotVenn(map(split(res3, f = list(res3$comparison, res3$enrichment)), function(x
 
 
 ```{r}
+#| fig-keep: "none"
 # perform pathway analysis using multiple pathway genesets
 #empty lists for adding in the pathway results
 barplots_1 <- list()
@@ -1075,7 +1090,10 @@ for (i in 1:length(gene_set)) {
   
   }
 }
+```
 
+
+```{r}
 #| layout-ncol: 1
 #| fig-cap: 
 #|   - "Pathway enrichment stats across multiple databases and tissue conditions"
@@ -1092,6 +1110,7 @@ No pathways significant for Heart and Liver DEGs for timepoint T0.
 #### Pathway analysis for tissue-enriched DEGs for timepoint T12
 
 ```{r}
+#| fig-keep: "none"
 # perform pathway analysis using multiple pathway genesets
 #empty lists for adding in the pathway results
 barplots_1 <- list()
@@ -1137,7 +1156,10 @@ for (i in 1:length(gene_set)) {
   
   }
 }
+```
 
+
+```{r}
 #| layout-ncol: 1
 #| fig-cap: 
 #|   - "Pathway enrichment stats across multiple databases and tissue conditions"
