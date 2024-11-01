@@ -123,3 +123,11 @@ nextflow run nf-core/rnaseq -r 3.14.0 \
 ```
 
 **Status:** The run keeps failing due to memory issues. I need access to a server or cluster with resources to run the preprocessing steps.
+
+**Status:Still, the kallisto output files were created and the FASTQC steps had to be run through the command line**. I would have been happy to get access to more QC reports which I couldnt do because of no access to a strong machine.
+
+```{r}
+conda install bioconda::multiqc
+multiqc .
+```
+
